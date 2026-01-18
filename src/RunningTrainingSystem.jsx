@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Heart, Target, Calendar, AlertCircle, CheckCircle, TrendingUp, Zap } from 'lucide-react';
+import { Activity, Heart, Target, Calendar, AlertCircle, CheckCircle, TrendingUp, Zap, Info } from 'lucide-react';
 
 const RunningTrainingSystem = () => {
   const [step, setStep] = useState(1);
@@ -9,13 +9,16 @@ const RunningTrainingSystem = () => {
     hrMax: '',
     hrRest: '',
   });
-  const [hrZones, setHrZones] = useState({
-    z1: { min: 50, max: 60 },
-    z2: { min: 60, max: 70 },
-    z3: { min: 70, max: 80 },
-    z4: { min: 80, max: 90 },
-    z5: { min: 90, max: 100 }
+  
+  const [hrMode, setHrMode] = useState('auto');
+  const [customHrZones, setCustomHrZones] = useState({
+    z1Upper: 60,
+    z2Upper: 70,
+    z3Upper: 80,
+    z4Upper: 90,
+    z5Upper: 100
   });
+  
   const [performance, setPerformance] = useState({
     distance: '5',
     hours: '0',
@@ -35,28 +38,50 @@ const RunningTrainingSystem = () => {
   });
   const [result, setResult] = useState(null);
 
-  // 計算心率區間
   const calculateHrZones = () => {
     if (!profile.hrMax || !profile.hrRest) return null;
     const max = parseInt(profile.hrMax);
     const rest = parseInt(profile.hrRest);
     const reserve = max - rest;
     
-    return {
-      z1: { min: Math.round(rest + reserve * 0.5), max: Math.round(rest + reserve * 0.6) },
-      z2: { min: Math.round(rest + reserve * 0.6), max: Math.round(rest + reserve * 0.7) },
-      z3: { min: Math.round(rest + reserve * 0.7), max: Math.round(rest + reserve * 0.8) },
-      z4: { min: Math.round(rest + reserve * 0.8), max: Math.round(rest + reserve * 0.9) },
-      z5: { min: Math.round(rest + reserve * 0.9), max: Math.round(rest + reserve * 1.0) }
-    };
+    if (hrMode === 'manual') {
+      return {
+        z1: { 
+          min: Math.round(rest + reserve * 0.5), 
+          max: Math.round(rest + reserve * (customHrZones.z1Upper / 100)) 
+        },
+        z2: { 
+          min: Math.round(rest + reserve * (customHrZones.z1Upper / 100)), 
+          max: Math.round(rest + reserve * (customHrZones.z2Upper / 100)) 
+        },
+        z3: { 
+          min: Math.round(rest + reserve * (customHrZones.z2Upper / 100)), 
+          max: Math.round(rest + reserve * (customHrZones.z3Upper / 100)) 
+        },
+        z4: { 
+          min: Math.round(rest + reserve * (customHrZones.z3Upper / 100)), 
+          max: Math.round(rest + reserve * (customHrZones.z4Upper / 100)) 
+        },
+        z5: { 
+          min: Math.round(rest + reserve * (customHrZones.z4Upper / 100)), 
+          max: Math.round(rest + reserve * (customHrZones.z5Upper / 100)) 
+        }
+      };
+    } else {
+      return {
+        z1: { min: Math.round(rest + reserve * 0.5), max: Math.round(rest + reserve * 0.6) },
+        z2: { min: Math.round(rest + reserve * 0.6), max: Math.round(rest + reserve * 0.7) },
+        z3: { min: Math.round(rest + reserve * 0.7), max: Math.round(rest + reserve * 0.8) },
+        z4: { min: Math.round(rest + reserve * 0.8), max: Math.round(rest + reserve * 0.9) },
+        z5: { min: Math.round(rest + reserve * 0.9), max: Math.round(rest + reserve * 1.0) }
+      };
+    }
   };
 
-  // Riegel 公式跨距離推估
   const predictTime = (currentDist, currentTime, targetDist, fatigueK = 1.06) => {
     return currentTime * Math.pow(targetDist / currentDist, fatigueK);
   };
 
-  // 可行性評估引擎
   const evaluateFeasibility = () => {
     const currentDist = parseFloat(performance.distance);
     const currentTime = parseInt(performance.hours) * 3600 + parseInt(performance.minutes) * 60 + parseInt(performance.seconds);
@@ -64,10 +89,8 @@ const RunningTrainingSystem = () => {
     const prepWeeks = parseInt(goal.prepWeeks);
     const maxWeeklyKm = parseInt(goal.maxWeeklyKm);
     
-    // 預測目標距離的當前能力
     const predictedTime = predictTime(currentDist, currentTime, targetDist);
     
-    // 目標時間 (如果有填)
     let targetTime = null;
     if (goal.targetHours || goal.targetMinutes || goal.targetSeconds) {
       targetTime = (parseInt(goal.targetHours) || 0) * 3600 + 
@@ -75,26 +98,21 @@ const RunningTrainingSystem = () => {
                    (parseInt(goal.targetSeconds) || 0);
     }
     
-    // 如果沒填目標時間，建議一個合理範圍
     if (!targetTime) {
       const improvement = prepWeeks >= 12 ? 0.95 : (prepWeeks >= 8 ? 0.97 : 0.98);
       targetTime = Math.round(predictedTime * improvement);
     }
     
-    // 計算需要的進步幅度
     const requiredImprovement = ((predictedTime - targetTime) / predictedTime) * 100;
     
-    // 根據準備週數估算合理進步上限
     let maxReasonableImprovement;
     if (prepWeeks >= 16) maxReasonableImprovement = 10;
     else if (prepWeeks >= 12) maxReasonableImprovement = 7;
     else if (prepWeeks >= 8) maxReasonableImprovement = 5;
     else maxReasonableImprovement = 3;
     
-    // 週跑量檢查
     const weeklyVolumeAdequate = maxWeeklyKm >= targetDist * 3;
     
-    // 可行性判斷
     let feasibility;
     if (requiredImprovement <= maxReasonableImprovement && weeklyVolumeAdequate) {
       feasibility = 'feasible';
@@ -104,12 +122,10 @@ const RunningTrainingSystem = () => {
       feasibility = 'not_feasible';
     }
     
-    // 建議週數
     const recommendedWeeks = feasibility === 'not_feasible' 
       ? Math.ceil(prepWeeks * (requiredImprovement / maxReasonableImprovement))
       : prepWeeks;
     
-    // 產生訓練計畫
     const plan = generateTrainingPlan(currentDist, currentTime, targetDist, targetTime, prepWeeks, maxWeeklyKm);
     
     return {
@@ -130,66 +146,57 @@ const RunningTrainingSystem = () => {
     };
   };
 
-  // LSD 引擎
   const calculateLSD = (weeklyKm, easyPaceMin, targetDist, weekNumber, totalWeeks) => {
-    // 規則1: 週跑量的 25-30%
     const byPercentage = weeklyKm * 0.28;
-    
-    // 規則2: 150 分鐘上限
-    const by150Min = easyPaceMin * 150 / 60;
-    
-    // 規則3: 目標賽事 1.2 倍上限 (在 Build 期才接近)
+    const by150Min = 150 / easyPaceMin;
     const phase = weekNumber <= totalWeeks * 0.4 ? 'base' : 
                   weekNumber <= totalWeeks * 0.8 ? 'build' : 'taper';
     const raceMultiplier = phase === 'base' ? 0.7 : phase === 'build' ? 1.0 : 0.5;
     const byRaceLimit = targetDist * 1.2 * raceMultiplier;
     
-    // 取最小值
-    const lsdKm = Math.min(byPercentage, by150Min, byRaceLimit);
-    
-    // 漸進原則: 每週 +5-10%, 每第4週 -20%
+    let lsdKm = Math.min(byPercentage, by150Min, byRaceLimit);
     const isRecoveryWeek = weekNumber % 4 === 0;
-    const progressionFactor = isRecoveryWeek ? 0.8 : 1.0;
+    if (isRecoveryWeek) {
+      lsdKm = lsdKm * 0.8;
+    }
     
-    return Math.round(lsdKm * progressionFactor * 10) / 10;
+    return Math.round(lsdKm * 10) / 10;
   };
 
-  // 訓練計畫生成器
   const generateTrainingPlan = (currentDist, currentTime, targetDist, targetTime, weeks, maxWeeklyKm) => {
     const daysPerWeek = parseInt(goal.daysPerWeek);
-    const targetPace = targetTime / 60 / targetDist; // min/km
+    const targetPace = targetTime / 60 / targetDist;
     const easyPace = targetPace * 1.25;
     const tempoPace = targetPace * 1.1;
     const intervalPace = targetPace * 0.95;
     
+    const zones = calculateHrZones();
+    
     const plan = [];
     const baseWeeks = Math.floor(weeks * 0.4);
     const buildWeeks = Math.floor(weeks * 0.4);
-    const taperWeeks = weeks - baseWeeks - buildWeeks;
     
     for (let w = 1; w <= weeks; w++) {
       const phase = w <= baseWeeks ? 'Base' : w <= baseWeeks + buildWeeks ? 'Build' : 'Taper';
-      const weeklyKm = phase === 'Taper' ? maxWeeklyKm * 0.6 : 
-                       Math.min(maxWeeklyKm, 20 + (w / weeks) * (maxWeeklyKm - 20));
-      
-      const lsdKm = calculateLSD(weeklyKm, easyPace, targetDist, w, weeks);
-      const lsdTime = Math.round(lsdKm * easyPace);
       
       const days = [];
+      const weekProgress = w / weeks;
+      const baseWeeklyKm = phase === 'Taper' ? maxWeeklyKm * 0.6 : 
+                           20 + (weekProgress * (maxWeeklyKm - 20));
+      const lsdKm = calculateLSD(baseWeeklyKm, easyPace, targetDist, w, weeks);
+      const lsdTime = Math.round(lsdKm * easyPace);
       
-      // 週日: LSD
       days.push({
         day: '週日',
         type: 'LSD',
         distance: lsdKm,
         pace: easyPace.toFixed(2),
         duration: lsdTime,
-        hr: 'Zone 2',
-        description: `長距離慢跑 ${lsdKm}km，配速 ${easyPace.toFixed(2)} min/km`
+        hr: zones ? `Zone 2 (${zones.z2.min}-${zones.z2.max} bpm)` : 'Zone 2',
+        description: `長距離慢跑 ${lsdKm}km @ ${easyPace.toFixed(2)} min/km`
       });
       
       if (daysPerWeek >= 4 && phase !== 'Taper') {
-        // 週三: Tempo 或 Threshold
         const tempoKm = phase === 'Build' ? 8 : 6;
         days.push({
           day: '週三',
@@ -197,44 +204,48 @@ const RunningTrainingSystem = () => {
           distance: tempoKm,
           pace: tempoPace.toFixed(2),
           duration: Math.round(tempoKm * tempoPace),
-          hr: 'Zone 3-4',
-          description: `節奏跑 ${tempoKm}km，配速 ${tempoPace.toFixed(2)} min/km`
+          hr: zones ? `Zone 3-4 (${zones.z3.min}-${zones.z4.max} bpm)` : 'Zone 3-4',
+          description: `節奏跑 ${tempoKm}km @ ${tempoPace.toFixed(2)} min/km`
         });
       }
       
       if (daysPerWeek >= 5 && phase === 'Build') {
-        // 週五: Intervals
-        const intervalSets = w > baseWeeks + buildWeeks / 2 ? '6×800m' : '5×1000m';
+        const intervalKm = 6;
         days.push({
           day: '週五',
           type: 'Interval',
-          distance: 6,
+          distance: intervalKm,
           pace: intervalPace.toFixed(2),
           duration: 45,
-          hr: 'Zone 4-5',
-          description: `間歇訓練 ${intervalSets}，配速 ${intervalPace.toFixed(2)} min/km，休息 400m 慢跑`
+          hr: zones ? `Zone 4-5 (${zones.z4.min}-${zones.z5.max} bpm)` : 'Zone 4-5',
+          description: `間歇訓練 6x800m @ ${intervalPace.toFixed(2)} min/km (休息 400m 慢跑)`
         });
       }
       
-      // 填充 Easy runs
       const remainingDays = daysPerWeek - days.length;
+      const easyKm = phase === 'Taper' ? 5 : 6;
+      
       for (let i = 0; i < remainingDays; i++) {
-        const easyKm = 6;
         days.push({
-          day: `週${['一', '二', '四', '六'][i]}`,
+          day: `週${['一', '二', '四', '六'][i] || '?'}`,
           type: 'Easy',
           distance: easyKm,
           pace: easyPace.toFixed(2),
           duration: Math.round(easyKm * easyPace),
-          hr: 'Zone 2',
+          hr: zones ? `Zone 2 (${zones.z2.min}-${zones.z2.max} bpm)` : 'Zone 2',
           description: `輕鬆跑 ${easyKm}km`
         });
       }
       
+      const actualWeeklyKm = days.reduce((sum, day) => sum + day.distance, 0);
+      const lsdPercentage = (lsdKm / actualWeeklyKm * 100).toFixed(1);
+      
       plan.push({
         week: w,
         phase,
-        totalKm: weeklyKm.toFixed(1),
+        totalKm: actualWeeklyKm.toFixed(1),
+        lsdKm: lsdKm.toFixed(1),
+        lsdPercentage,
         days
       });
     }
@@ -242,19 +253,73 @@ const RunningTrainingSystem = () => {
     return plan;
   };
 
-  // 補給策略
   const generateNutrition = (raceTimeSec, distanceKm) => {
     const hours = raceTimeSec / 3600;
-    const waterPerHour = 400; // ml
-    const carbsPerHour = hours > 2 ? 60 : 30; // g
+    const minutes = raceTimeSec / 60;
     
-    return {
-      totalWater: Math.round(waterPerHour * hours),
-      totalCarbs: Math.round(carbsPerHour * hours),
-      strategy: hours > 2.5 
-        ? `每 5km 補水 200ml + 每 30 分鐘補充能量膠 1 包 (25g 碳水)`
-        : `每 20-25 分鐘小口補水，賽程過半後可補充能量膠`
-    };
+    let strategy = [];
+    let gelCount = 0;
+    let waterCount = 0;
+    
+    if (minutes < 30) {
+      strategy.push('賽前30-60分鐘攝取少量碳水(香蕉/能量棒)');
+      strategy.push('賽前15分鐘可小口補水100-150ml');
+      strategy.push('比賽過程無需補給');
+      return {
+        totalWater: 0,
+        totalCarbs: 0,
+        gelCount: 0,
+        waterCount: 0,
+        strategy: strategy.join(' | ')
+      };
+    } else if (minutes < 60) {
+      strategy.push('賽前1小時攝取碳水30-50g');
+      strategy.push('賽中約25-30分鐘時可小口補水100ml');
+      waterCount = 1;
+      return {
+        totalWater: 100,
+        totalCarbs: 0,
+        gelCount: 0,
+        waterCount: 1,
+        strategy: strategy.join(' | ')
+      };
+    } else if (minutes < 90) {
+      strategy.push('每20-25分鐘補水150-200ml');
+      strategy.push('約45分鐘時補充能量膠1包(25g)');
+      gelCount = 1;
+      waterCount = Math.ceil(minutes / 23);
+      return {
+        totalWater: waterCount * 180,
+        totalCarbs: 25,
+        gelCount: 1,
+        waterCount,
+        strategy: strategy.join(' | ')
+      };
+    } else if (minutes < 150) {
+      strategy.push('每20分鐘補水150-200ml');
+      strategy.push('每30-35分鐘補充能量膠1包(25g)');
+      gelCount = Math.floor(minutes / 33);
+      waterCount = Math.ceil(minutes / 20);
+      return {
+        totalWater: waterCount * 180,
+        totalCarbs: gelCount * 25,
+        gelCount,
+        waterCount,
+        strategy: strategy.join(' | ')
+      };
+    } else {
+      strategy.push('每15-20分鐘補水150-200ml(總量約400-600ml/小時)');
+      strategy.push('每30分鐘補充能量膠1包(目標60g碳水/小時)');
+      gelCount = Math.floor(minutes / 30);
+      waterCount = Math.ceil(minutes / 18);
+      return {
+        totalWater: waterCount * 180,
+        totalCarbs: gelCount * 25,
+        gelCount,
+        waterCount,
+        strategy: strategy.join(' | ')
+      };
+    }
   };
 
   const formatTime = (seconds) => {
@@ -270,12 +335,9 @@ const RunningTrainingSystem = () => {
     setStep(5);
   };
 
-  const zones = calculateHrZones() || hrZones;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           <div className="flex items-center gap-3 mb-2">
             <Activity className="w-8 h-8 text-indigo-600" />
@@ -284,7 +346,6 @@ const RunningTrainingSystem = () => {
           <p className="text-gray-600">能力評估 × 可行性判斷 × 智慧課表生成</p>
         </div>
 
-        {/* Progress Steps */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           <div className="flex justify-between items-center">
             {[
@@ -306,7 +367,6 @@ const RunningTrainingSystem = () => {
           </div>
         </div>
 
-        {/* Step 1: Profile */}
         {step === 1 && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-2xl font-bold mb-6 text-gray-800">跑者檔案與心率設定</h2>
@@ -355,15 +415,70 @@ const RunningTrainingSystem = () => {
             </div>
 
             {profile.hrMax && profile.hrRest && (
-              <div className="bg-indigo-50 p-4 rounded-lg mb-6">
-                <h3 className="font-bold mb-3">心率區間 (Karvonen 公式)</h3>
-                <div className="grid grid-cols-5 gap-2 text-sm">
-                  {Object.entries(zones).map(([zone, {min, max}]) => (
-                    <div key={zone} className="bg-white p-2 rounded text-center">
-                      <div className="font-bold text-indigo-600">{zone.toUpperCase()}</div>
-                      <div className="text-gray-600">{min}-{max} bpm</div>
+              <div className="mb-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <label className="font-medium">心率區間設定模式：</label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      value="auto"
+                      checked={hrMode === 'auto'}
+                      onChange={(e) => setHrMode(e.target.value)}
+                    />
+                    <span>自動計算 (Karvonen)</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      value="manual"
+                      checked={hrMode === 'manual'}
+                      onChange={(e) => setHrMode(e.target.value)}
+                    />
+                    <span>手動設定</span>
+                  </label>
+                </div>
+
+                {hrMode === 'manual' && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                    <h3 className="font-bold mb-3 flex items-center gap-2">
+                      <Info className="w-5 h-5" />
+                      自訂心率區間上限 (HRR%)
+                    </h3>
+                    <div className="grid grid-cols-5 gap-3">
+                      {['z1Upper', 'z2Upper', 'z3Upper', 'z4Upper', 'z5Upper'].map((zone, idx) => (
+                        <div key={zone}>
+                          <label className="block text-xs font-medium mb-1">
+                            Zone {idx + 1} 上限
+                          </label>
+                          <input
+                            type="number"
+                            min={idx === 0 ? 50 : customHrZones[`z${idx}Upper`]}
+                            max={100}
+                            className="w-full p-2 border rounded text-sm"
+                            value={customHrZones[zone]}
+                            onChange={(e) => setCustomHrZones({
+                              ...customHrZones,
+                              [zone]: parseInt(e.target.value)
+                            })}
+                          />
+                          <span className="text-xs text-gray-500">{customHrZones[zone]}%</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                )}
+
+                <div className="bg-indigo-50 p-4 rounded-lg">
+                  <h3 className="font-bold mb-3">心率區間結果</h3>
+                  <div className="grid grid-cols-5 gap-2 text-sm">
+                    {Object.entries(calculateHrZones() || {}).map(([zone, {min, max}]) => (
+                      <div key={zone} className="bg-white p-2 rounded text-center">
+                        <div className="font-bold text-indigo-600">{zone.toUpperCase()}</div>
+                        <div className="text-gray-600">{min}-{max}</div>
+                        <div className="text-xs text-gray-500">bpm</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -377,7 +492,6 @@ const RunningTrainingSystem = () => {
           </div>
         )}
 
-        {/* Step 2: Performance */}
         {step === 2 && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-2xl font-bold mb-6 text-gray-800">近期最佳成績</h2>
@@ -438,17 +552,6 @@ const RunningTrainingSystem = () => {
               </div>
             </div>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">平均心率 (選填)</label>
-              <input
-                type="number"
-                className="w-full p-2 border rounded"
-                value={performance.avgHr}
-                onChange={(e) => setPerformance({...performance, avgHr: e.target.value})}
-                placeholder="例: 165"
-              />
-            </div>
-
             <div className="flex gap-3">
               <button
                 onClick={() => setStep(1)}
@@ -466,7 +569,6 @@ const RunningTrainingSystem = () => {
           </div>
         )}
 
-        {/* Step 3: Goal */}
         {step === 3 && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-2xl font-bold mb-6 text-gray-800">訓練目標與限制</h2>
@@ -568,7 +670,6 @@ const RunningTrainingSystem = () => {
           </div>
         )}
 
-        {/* Step 4: Generate */}
         {step === 4 && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-2xl font-bold mb-6 text-gray-800">確認資料並生成計畫</h2>
@@ -577,7 +678,7 @@ const RunningTrainingSystem = () => {
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-bold mb-2">跑者檔案</h3>
                 <p>年齡: {profile.age || '未填'} | 性別: {profile.gender === 'male' ? '男' : '女'}</p>
-                {profile.hrMax && <p>心率區間: HRmax {profile.hrMax} / HRrest {profile.hrRest}</p>}
+                {profile.hrMax && <p>心率: HRmax {profile.hrMax} / HRrest {profile.hrRest} ({hrMode === 'auto' ? 'Karvonen自動' : '手動設定'})</p>}
               </div>
 
               <div className="bg-gray-50 p-4 rounded-lg">
@@ -610,10 +711,8 @@ const RunningTrainingSystem = () => {
           </div>
         )}
 
-        {/* Step 5: Results */}
         {step === 5 && result && (
           <div className="space-y-6">
-            {/* Feasibility Card */}
             <div className={`rounded-lg shadow-lg p-6 ${
               result.feasibility === 'feasible' ? 'bg-green-50 border-2 border-green-500' :
               result.feasibility === 'borderline' ? 'bg-yellow-50 border-2 border-yellow-500' :
@@ -646,7 +745,6 @@ const RunningTrainingSystem = () => {
               )}
             </div>
 
-            {/* Current Ability */}
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h3 className="text-xl font-bold mb-4">目前能力評估</h3>
               <div className="grid grid-cols-4 gap-4">
@@ -669,17 +767,27 @@ const RunningTrainingSystem = () => {
               </div>
             </div>
 
-            {/* Training Plan */}
             <div className="bg-white rounded-lg shadow-lg p-6">
-              <h3 className="text-xl font-bold mb-4">完整訓練計畫 ({result.plan.length} 週)</h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold">完整訓練計畫 ({result.plan.length} 週)</h3>
+                <div className="bg-blue-50 px-4 py-2 rounded-lg">
+                  <p className="text-sm font-bold text-blue-700">LSD 規則說明</p>
+                  <p className="text-xs text-gray-600">取最小值: ① 週跑量28% ② 150分鐘上限 ③ 目標賽事1.2倍</p>
+                </div>
+              </div>
               <div className="space-y-4 max-h-[600px] overflow-y-auto">
                 {result.plan.map((week) => (
                   <div key={week.week} className="border rounded-lg p-4">
                     <div className="flex justify-between items-center mb-3">
                       <h4 className="font-bold">第 {week.week} 週 - {week.phase}</h4>
-                      <span className="bg-indigo-100 px-3 py-1 rounded-full text-sm">
-                        週跑量: {week.totalKm}K
-                      </span>
+                      <div className="flex gap-2">
+                        <span className="bg-indigo-100 px-3 py-1 rounded-full text-sm">
+                          週跑量: {week.totalKm}K
+                        </span>
+                        <span className="bg-blue-100 px-3 py-1 rounded-full text-sm">
+                          LSD: {week.lsdKm}K ({week.lsdPercentage}%)
+                        </span>
+                      </div>
                     </div>
                     <div className="grid grid-cols-1 gap-2">
                       {week.days.map((day, idx) => (
@@ -710,17 +818,20 @@ const RunningTrainingSystem = () => {
               </div>
             </div>
 
-            {/* Nutrition */}
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h3 className="text-xl font-bold mb-4">賽事補給策略</h3>
+              <div className="bg-blue-50 p-4 rounded-lg mb-4">
+                <p className="font-bold mb-2">預估完賽時間: {formatTime(result.targetTime)}</p>
+                <p className="text-sm text-gray-700">根據目標時間量身打造的補給建議</p>
+              </div>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <div className="text-2xl font-bold text-blue-600">{result.nutrition.totalWater} ml</div>
-                  <div className="text-sm text-gray-600">總補水量</div>
+                  <div className="text-sm text-gray-600">總補水量 ({result.nutrition.waterCount} 次)</div>
                 </div>
                 <div className="bg-orange-50 p-4 rounded-lg">
                   <div className="text-2xl font-bold text-orange-600">{result.nutrition.totalCarbs} g</div>
-                  <div className="text-sm text-gray-600">總碳水化合物</div>
+                  <div className="text-sm text-gray-600">總碳水 ({result.nutrition.gelCount} 包能量膠)</div>
                 </div>
               </div>
               <div className="bg-gray-50 p-4 rounded-lg">
@@ -729,7 +840,6 @@ const RunningTrainingSystem = () => {
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex gap-3">
               <button
                 onClick={() => setStep(1)}
